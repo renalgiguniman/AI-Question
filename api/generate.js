@@ -22,13 +22,11 @@ export default async function handler(req, res) {
 
     const prompt = buildPrompt(blueprintItem, config);
 
-    const prompt = buildPrompt(blueprintItem, config);
-
     async function callGeminiAPI(modelName) {
         const generationConfig = { temperature: 0.7 };
         
-        // Hanya tambahkan json mode untuk Gemini 1.5, karena 1.0 (gemini-pro) tidak support di v1beta
-        if (modelName.includes('1.5')) {
+        // Hanya tambahkan json mode untuk Gemini 1.5 dan ke atas
+        if (modelName.includes('1.5') || modelName.includes('3.6')) {
             generationConfig.responseMimeType = "application/json";
         }
 
