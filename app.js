@@ -189,10 +189,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     const q = await window.AIQEngine.generateQuestionWithAI(item, currentConfig);
                     generatedQuestions.push(q);
                 } catch (err) {
-                    // Fallback soal error — bisa di-regenerate satu per satu
+                    // Fallback soal error — tampilkan pesan error asli dari server
                     generatedQuestions.push({
                         id: 'err_' + Date.now() + i,
-                        question: '⚠️ Gagal membuat soal ini. Klik Regenerate untuk coba lagi.',
+                        question: `⚠️ Gagal: ${err.message}`,
                         options: { A: '-', B: '-', C: '-', D: '-' },
                         correctAnswer: 'A',
                         indicator: '-',
@@ -398,6 +398,98 @@ document.addEventListener('DOMContentLoaded', () => {
         viewKisi.classList.toggle('hidden',        tabName !== 'kisi');
         lucide.createIcons();
     }
+
+    // ===== DOCX EXPORT =====
+    window._exportDocx = () => {
+        if (typeof docx === 'undefined') {
+            alert("Library pembuat Word sedang dimuat. Coba lagi dalam beberapa detik.");
+            return;
+        }
+
+        const { Document, Packer, Paragraph, TextRun, AlignmentType, HeadingLevel } = docx;
+
+        const doc = new Document({
+            sections: [{
+                properties: {},
+                children: [
+                    new Paragraph({
+                        text: "Lembar Soal Pilihan Ganda",
+                        heading: HeadingLevel.HEADING_1,
+                        alignment: AlignmentType.CENTER,
+                    }),
+                    new Paragraph({ text: "" }), // spacer
+                    ...generatedQuestions.flatMap(q => {
+                        return [
+                            new Paragraph({
+                                alignment: AlignmentType.JUSTIFIED,
+                                spacing: { line: 360 }, // 1.5 spacing (240 = 1, 360 = 1.5)
+                                children: [
+                                    new TextRun({ text: `${q.questionNumber}. ${q.question}`, font: "Times New Roman", size: 24 }) // size 24 = 12pt
+                                ]
+                            }),
+                            new Paragraph({
+                                alignment: AlignmentType.JUSTIFIED,
+                                spacing: { line: 360 },
+                                children: [
+                                    new TextRun({ text: `A. ${q.options.A}`, font: "Times New Roman", size: 24 })
+                                ]
+                            }),
+                            new Paragraph({
+                                alignment: AlignmentType.JUSTIFIED,
+                                spacing: { line: 360 },
+                                children: [
+                                    new TextRun({ text: `B. ${q.options.B}`, font: "Times New Roman", size: 24 })
+                                ]
+                            }),
+                            new Paragraph({
+                                alignment: AlignmentType.JUSTIFIED,
+                                spacing: { line: 360 },
+                                children: [
+                                    new TextRun({ text: `C. ${q.options.C}`, font: "Times New Roman", size: 24 })
+                                ]
+                            }),
+                            new Paragraph({
+                                alignment: AlignmentType.JUSTIFIED,
+                                spacing: { line: 360 },
+                                children: [
+                                    new TextRun({ text: `D. ${q.options.D}`, font: "Times New Roman", size: 24 })
+                                ]
+                            }),
+                            new Paragraph({ text: "" }) // spacer between questions
+                        ];
+                    }),
+                    // Kunci Jawaban (Page Break)
+                    new Paragraph({
+                        text: "Kunci Jawaban",
+                        heading: HeadingLevel.HEADING_1,
+                        alignment: AlignmentType.CENTER,
+                        pageBreakBefore: true,
+                    }),
+                    new Paragraph({ text: "" }),
+                    ...generatedQuestions.map(q => {
+                        return new Paragraph({
+                            spacing: { line: 360 },
+                            children: [
+                                new TextRun({ text: `${q.questionNumber}. ${q.correctAnswer}`, font: "Times New Roman", size: 24 })
+                            ]
+                        });
+                    })
+                ]
+            }]
+        });
+
+        Packer.toBlob(doc).then(blob => {
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "Soal_AI_Generator.docx";
+            a.click();
+            window.URL.revokeObjectURL(url);
+        }).catch(err => {
+            console.error("Error creating DOCX:", err);
+            alert("Terjadi kesalahan saat membuat file Word.");
+        });
+    };
 
     // ===== UTILS =====
     function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }

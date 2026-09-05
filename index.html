@@ -8,6 +8,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/docx@8.5.0/build/index.js"></script>
 </head>
 <body>
     <div class="app-container">
@@ -171,10 +172,13 @@
                 <div id="view-questions" class="view-content">
                     <div class="export-toolbar no-print">
                         <button class="btn btn-secondary btn-small" onclick="window.print()">
-                            <i data-lucide="printer"></i> Print / Simpan PDF
+                            <i data-lucide="printer"></i> Print PDF
+                        </button>
+                        <button class="btn btn-primary btn-small" onclick="window._exportDocx()">
+                            <i data-lucide="file-text"></i> Unduh DOCX
                         </button>
                         <button class="btn btn-secondary btn-small" id="regenerate-all-btn">
-                            <i data-lucide="refresh-cw"></i> Regenerate Semua (Unlocked)
+                            <i data-lucide="refresh-cw"></i> Regenerate Semua
                         </button>
                         <button class="btn btn-secondary btn-small" id="back-config-btn">
                             <i data-lucide="arrow-left"></i> Konfigurasi Baru
