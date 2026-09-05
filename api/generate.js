@@ -22,9 +22,9 @@ export default async function handler(req, res) {
 
     const prompt = buildPrompt(blueprintItem, config);
 
-    try {
-        const geminiResponse = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+    async function callGeminiAPI(modelName) {
+        return await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`,
             {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -37,15 +37,26 @@ export default async function handler(req, res) {
                 })
             }
         );
+    }
+
+    try {
+        // Coba model Flash 1.5 dulu
+        let geminiResponse = await callGeminiAPI('gemini-1.5-flash');
+        let data = await geminiResponse.json();
+
+        // Jika model tidak ditemukan (error dari screenshot), otomatis fallback ke gemini-pro (Gemini 1.0)
+        if (!geminiResponse.ok && data?.error?.message?.includes('not found')) {
+            console.warn("Model gemini-1.5-flash tidak ditemukan, mencoba gemini-pro...");
+            geminiResponse = await callGeminiAPI('gemini-pro');
+            data = await geminiResponse.json();
+        }
 
         if (!geminiResponse.ok) {
-            const errData = await geminiResponse.json();
-            console.error("🔥 Error dari Gemini:", JSON.stringify(errData, null, 2));
-            const errMsg = errData?.error?.message || 'Gemini API error.';
+            console.error("🔥 Error dari Gemini:", JSON.stringify(data, null, 2));
+            const errMsg = data?.error?.message || 'Gemini API error.';
             return res.status(502).json({ error: `Gemini Error: ${errMsg}` });
         }
 
-        const data = await geminiResponse.json();
         const textResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text;
 
         if (!textResponse) {
