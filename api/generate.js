@@ -22,7 +22,16 @@ export default async function handler(req, res) {
 
     const prompt = buildPrompt(blueprintItem, config);
 
+    const prompt = buildPrompt(blueprintItem, config);
+
     async function callGeminiAPI(modelName) {
+        const generationConfig = { temperature: 0.7 };
+        
+        // Hanya tambahkan json mode untuk Gemini 1.5, karena 1.0 (gemini-pro) tidak support di v1beta
+        if (modelName.includes('1.5')) {
+            generationConfig.responseMimeType = "application/json";
+        }
+
         return await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`,
             {
@@ -30,24 +39,20 @@ export default async function handler(req, res) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     contents: [{ parts: [{ text: prompt }] }],
-                    generationConfig: {
-                        temperature: 0.7,
-                        responseMimeType: "application/json"
-                    }
+                    generationConfig: generationConfig
                 })
             }
         );
     }
 
     try {
-        // Coba model Flash 1.5 dulu
-        let geminiResponse = await callGeminiAPI('gemini-1.5-flash');
+        let geminiResponse = await callGeminiAPI('gemini-3.6-flash');
         let data = await geminiResponse.json();
 
-        // Jika model tidak ditemukan (error dari screenshot), otomatis fallback ke gemini-pro (Gemini 1.0)
+        // Fallback to gemini-3.6-pro if flash is not found or has issues
         if (!geminiResponse.ok && data?.error?.message?.includes('not found')) {
-            console.warn("Model gemini-1.5-flash tidak ditemukan, mencoba gemini-pro...");
-            geminiResponse = await callGeminiAPI('gemini-pro');
+            console.warn("Model gemini-3.6-flash tidak ditemukan, mencoba gemini-3.6-pro...");
+            geminiResponse = await callGeminiAPI('gemini-3.6-pro');
             data = await geminiResponse.json();
         }
 
@@ -57,12 +62,15 @@ export default async function handler(req, res) {
             return res.status(502).json({ error: `Gemini Error: ${errMsg}` });
         }
 
-        const textResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        let textResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text;
 
         if (!textResponse) {
             console.error("🔥 Output Gemini kosong:", JSON.stringify(data, null, 2));
             return res.status(502).json({ error: 'AI mengembalikan teks kosong.' });
         }
+
+        // Bersihkan formatting markdown jika ada (terutama jika dari gemini-pro)
+        textResponse = textResponse.replace(/```json/gi, '').replace(/```/g, '').trim();
 
         let parsed;
         try {
