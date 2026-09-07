@@ -398,215 +398,57 @@ document.addEventListener('DOMContentLoaded', () => {
         lucide.createIcons();
     }
 
-    // ===== DOCX EXPORT =====
+    // ===== DOCX EXPORT (Server-side) =====
     window._exportDocx = async () => {
-        // Tunggu library docx sampai 5 detik sebelum menyerah
-        if (typeof docx === 'undefined') {
-            let waited = 0;
-            while (typeof docx === 'undefined' && waited < 5000) {
-                await new Promise(r => setTimeout(r, 300));
-                waited += 300;
-            }
-        }
-        if (typeof docx === 'undefined') {
-            alert("Library Word gagal dimuat. Periksa koneksi internet Anda lalu coba lagi.");
+        if (generatedQuestions.length === 0) {
+            alert('Belum ada soal yang di-generate.');
             return;
         }
 
-        const {
-            Document, Packer, Paragraph, TextRun, AlignmentType, HeadingLevel,
-            Table, TableRow, TableCell, WidthType, BorderStyle,
-            ShadingType, convertInchesToTwip
-        } = docx;
-
-        const mapel  = currentConfig.mapel  || 'Mata Pelajaran';
-        const kelas  = `${currentConfig.jenjang} Kelas ${currentConfig.kelas}`;
-        const today  = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
-
-        // --- helper paragraf kosong ---
-        const spacer = () => new Paragraph({ text: "" });
-
-        // ================================================================
-        // SECTION 1 — LEMBAR SOAL
-        // ================================================================
-        const soalChildren = [
-            new Paragraph({
-                alignment: AlignmentType.CENTER,
-                children: [new TextRun({ text: "LEMBAR SOAL PILIHAN GANDA", bold: true, size: 32, font: "Times New Roman" })],
-                spacing: { after: 0 },
-            }),
-            new Paragraph({
-                alignment: AlignmentType.CENTER,
-                children: [new TextRun({ text: `${mapel}  ·  ${kelas}`, size: 24, font: "Times New Roman" })],
-                spacing: { after: 200 },
-            }),
-            spacer(),
-        ];
-
-        generatedQuestions.forEach(q => {
-            soalChildren.push(
-                new Paragraph({
-                    alignment: AlignmentType.JUSTIFIED,
-                    spacing: { line: 360, after: 120 },
-                    children: [new TextRun({ text: `${q.questionNumber}. ${q.question}`, font: "Times New Roman", size: 24 })],
-                }),
-                ...['A', 'B', 'C', 'D'].map(letter =>
-                    new Paragraph({
-                        indent: { left: convertInchesToTwip(0.3) },
-                        spacing: { line: 360, after: 60 },
-                        children: [new TextRun({ text: `${letter}. ${q.options[letter]}`, font: "Times New Roman", size: 24 })],
-                    })
-                ),
-                spacer()
-            );
-        });
-
-        // ================================================================
-        // SECTION 2 — KUNCI JAWABAN (tabel rapi 5 kolom)
-        // ================================================================
-        const COLS = 5;
-        const keyRows = [];
-        // header
-        keyRows.push(
-            new TableRow({
-                tableHeader: true,
-                children: Array.from({ length: COLS }, (_, ci) =>
-                    new TableCell({
-                        shading: { type: ShadingType.CLEAR, fill: "4F46E5" },
-                        width: { size: Math.floor(9000 / COLS), type: WidthType.DXA },
-                        children: [new Paragraph({
-                            alignment: AlignmentType.CENTER,
-                            children: [new TextRun({ text: ci === 0 ? "No" : "No", bold: true, color: "FFFFFF", font: "Times New Roman", size: 22 })]
-                        })]
-                    })
-                )
-            })
-        );
-        // chunk questions into rows of COLS
-        for (let i = 0; i < generatedQuestions.length; i += COLS) {
-            const chunk = generatedQuestions.slice(i, i + COLS);
-            // pad to COLS
-            while (chunk.length < COLS) chunk.push(null);
-            keyRows.push(
-                new TableRow({
-                    children: chunk.map((q, ci) => {
-                        const bg = ci % 2 === 0 ? "F3F4F6" : "FFFFFF";
-                        return new TableCell({
-                            shading: { type: ShadingType.CLEAR, fill: bg },
-                            width: { size: Math.floor(9000 / COLS), type: WidthType.DXA },
-                            children: [new Paragraph({
-                                alignment: AlignmentType.CENTER,
-                                children: q ? [
-                                    new TextRun({ text: `${q.questionNumber}.  `, font: "Times New Roman", size: 22 }),
-                                    new TextRun({ text: q.correctAnswer, bold: true, font: "Times New Roman", size: 22, color: "4F46E5" }),
-                                ] : [new TextRun({ text: "", size: 22 })]
-                            })]
-                        });
-                    })
-                })
-            );
+        const btn = document.querySelector('button[onclick="window._exportDocx()"]');
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = '⏳ Menyiapkan...';
         }
 
-        const kunciChildren = [
-            new Paragraph({
-                pageBreakBefore: true,
-                alignment: AlignmentType.CENTER,
-                children: [new TextRun({ text: "KUNCI JAWABAN", bold: true, size: 32, font: "Times New Roman" })],
-                spacing: { after: 0 },
-            }),
-            new Paragraph({
-                alignment: AlignmentType.CENTER,
-                children: [new TextRun({ text: `${mapel}  ·  ${kelas}`, size: 24, font: "Times New Roman" })],
-                spacing: { after: 300 },
-            }),
-            new Table({
-                width: { size: 9000, type: WidthType.DXA },
-                alignment: AlignmentType.CENTER,
-                rows: keyRows,
-            }),
-        ];
+        try {
+            const response = await fetch('/api/export-docx', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    questions: generatedQuestions,
+                    config: currentConfig,
+                }),
+            });
 
-        // ================================================================
-        // SECTION 3 — KISI-KISI (tabel lengkap)
-        // ================================================================
-        const headerCells = ["No", "Materi", "Level Bloom", "Kesulitan", "Indikator Soal", "Bentuk Soal"].map(txt =>
-            new TableCell({
-                shading: { type: ShadingType.CLEAR, fill: "4F46E5" },
-                children: [new Paragraph({
-                    alignment: AlignmentType.CENTER,
-                    children: [new TextRun({ text: txt, bold: true, color: "FFFFFF", font: "Times New Roman", size: 20 })]
-                })]
-            })
-        );
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({ error: 'Server error' }));
+                throw new Error(err.error || 'Gagal membuat DOCX di server.');
+            }
 
-        const kisiRows = [
-            new TableRow({ tableHeader: true, children: headerCells }),
-            ...generatedQuestions.map((q, idx) =>
-                new TableRow({
-                    children: [
-                        new TableCell({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: String(q.questionNumber), font: "Times New Roman", size: 20 })] })] }),
-                        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: q.material, font: "Times New Roman", size: 20 })] })] }),
-                        new TableCell({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: q.bloomLevel, font: "Times New Roman", size: 20 })] })] }),
-                        new TableCell({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: q.difficulty, font: "Times New Roman", size: 20 })] })] }),
-                        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: q.indicator, font: "Times New Roman", size: 20 })] })] }),
-                        new TableCell({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: "PG", font: "Times New Roman", size: 20 })] })] }),
-                    ]
-                })
-            )
-        ];
+            // Ambil nama file dari header Content-Disposition
+            const disposition = response.headers.get('Content-Disposition') || '';
+            const match = disposition.match(/filename="(.+?)"/);
+            const filename = match ? match[1] : `Soal_${(currentConfig.mapel || 'AI').replace(/\s+/g, '_')}.docx`;
 
-        const kisiChildren = [
-            new Paragraph({
-                pageBreakBefore: true,
-                alignment: AlignmentType.CENTER,
-                children: [new TextRun({ text: "KISI-KISI SOAL", bold: true, size: 32, font: "Times New Roman" })],
-                spacing: { after: 0 },
-            }),
-            new Paragraph({
-                alignment: AlignmentType.CENTER,
-                children: [new TextRun({ text: `${mapel}  ·  ${kelas}  ·  Tanggal: ${today}`, size: 24, font: "Times New Roman" })],
-                spacing: { after: 300 },
-            }),
-            new Table({
-                width: { size: 9000, type: WidthType.DXA },
-                rows: kisiRows,
-            }),
-        ];
-
-        // ================================================================
-        // BUILD DOCUMENT
-        // ================================================================
-        const doc = new Document({
-            sections: [{
-                properties: {
-                    page: {
-                        margin: {
-                            top: convertInchesToTwip(1),
-                            bottom: convertInchesToTwip(1),
-                            left: convertInchesToTwip(1.25),
-                            right: convertInchesToTwip(1),
-                        }
-                    }
-                },
-                children: [
-                    ...soalChildren,
-                    ...kunciChildren,
-                    ...kisiChildren,
-                ]
-            }]
-        });
-
-        Packer.toBlob(doc).then(blob => {
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = `Soal_${mapel.replace(/\s+/g, '_')}_${kelas.replace(/\s+/g, '_')}.docx`;
+            const blob = await response.blob();
+            const url  = window.URL.createObjectURL(blob);
+            const a    = document.createElement('a');
+            a.href     = url;
+            a.download = filename;
             a.click();
             window.URL.revokeObjectURL(url);
-        }).catch(err => {
-            console.error("Error creating DOCX:", err);
-            alert("Terjadi kesalahan saat membuat file Word: " + err.message);
-        });
+
+        } catch (err) {
+            console.error('Export DOCX error:', err);
+            alert('Gagal mengunduh DOCX: ' + err.message);
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<i data-lucide="file-text"></i> Unduh DOCX';
+                lucide.createIcons();
+            }
+        }
     };
 
     // ===== UTILS =====
