@@ -399,9 +399,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ===== DOCX EXPORT =====
-    window._exportDocx = () => {
+    window._exportDocx = async () => {
+        // Tunggu library docx sampai 5 detik sebelum menyerah
         if (typeof docx === 'undefined') {
-            alert("Library pembuat Word sedang dimuat. Coba lagi dalam beberapa detik.");
+            let waited = 0;
+            while (typeof docx === 'undefined' && waited < 5000) {
+                await new Promise(r => setTimeout(r, 300));
+                waited += 300;
+            }
+        }
+        if (typeof docx === 'undefined') {
+            alert("Library Word gagal dimuat. Periksa koneksi internet Anda lalu coba lagi.");
             return;
         }
 
