@@ -1,10 +1,9 @@
 // engine.js - Core Business Logic untuk AI Question Generator
-// Semua panggilan AI sekarang melewati /api/generate (Vercel Serverless Function)
+// Semua panggilan AI melewati /api/generate (Vercel Serverless Function)
 // API Key TIDAK pernah ada di file ini.
 
 /**
  * Largest Remainder Method untuk mendistribusikan soal secara deterministik.
- * Memastikan total soal selalu sama dengan yang diminta tanpa ada desimal.
  */
 function calculateDistribution(totalItems, items) {
     if (items.length === 0) return [];
@@ -18,7 +17,6 @@ function calculateDistribution(totalItems, items) {
         return { ...item, exact, count: integerPart, remainder };
     });
 
-    // Largest Remainder: tambahkan sisa ke item dengan remainder terbesar
     let remaining = totalItems - totalAssigned;
     allocations.sort((a, b) => b.remainder - a.remainder);
     for (let i = 0; i < remaining; i++) {
@@ -30,29 +28,22 @@ function calculateDistribution(totalItems, items) {
 
 /**
  * Membuat Blueprint (Material x Bloom Matrix)
- * Semua logika distribusi berjalan di sini — bukan di AI.
  */
 function generateBlueprint(config) {
     const { totalQuestions, materials, bloomDistribution, difficulty } = config;
 
-    // 1. Hitung kuota materi (deterministik)
     const materialQuota = calculateDistribution(totalQuestions, materials);
+    const bloomQuota    = calculateDistribution(totalQuestions, bloomDistribution);
 
-    // 2. Hitung kuota Bloom (deterministik)
-    const bloomQuota = calculateDistribution(totalQuestions, bloomDistribution);
-
-    // 3. Bangun blueprint satu per satu
     const blueprint = [];
     let qNumber = 1;
 
-    // Pool bloom yang tersedia
     const availableBlooms = bloomQuota
         .filter(b => b.count > 0)
         .map(b => ({ level: b.level, count: b.count }));
 
     materialQuota.forEach(mat => {
         for (let i = 0; i < mat.count; i++) {
-            // Pilih bloom berdasarkan kuota tertinggi (greedy, deterministik)
             let bloomLevel = 'C3';
             if (availableBlooms.length > 0) {
                 availableBlooms.sort((a, b) => b.count - a.count);
@@ -61,7 +52,6 @@ function generateBlueprint(config) {
                 if (availableBlooms[0].count === 0) availableBlooms.shift();
             }
 
-            // Difficulty: Mixed = distribusi default 30/50/20
             let diff = difficulty;
             if (difficulty === 'Mixed') {
                 const rand = Math.random();
@@ -83,23 +73,46 @@ function generateBlueprint(config) {
 }
 
 /**
- * Generate satu soal via Vercel Serverless Function (/api/generate).
- * API Key aman di server — tidak ada di sini.
+ * Generate satu soal via /api/generate.
+ * Dilengkapi retry otomatis (max 3x) jika kena rate limit / server sibuk.
  */
-async function generateQuestionWithAI(blueprintItem, config) {
-    const response = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ blueprintItem, config }),
-    });
+async function generateQuestionWithAI(blueprintItem, config, retries = 3) {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+            const response = await fetch('/api/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ blueprintItem, config }),
+            });
 
-    const data = await response.json();
+            const data = await response.json();
 
-    if (!response.ok) {
-        throw new Error(data.error || 'Gagal menghubungi server AI.');
+            if (!response.ok) {
+                const msg = data.error || 'Gagal menghubungi server AI.';
+                // Jika rate limit atau server sibuk, tunggu dan coba lagi
+                const isRateLimit = msg.toLowerCase().includes('high demand')
+                    || msg.toLowerCase().includes('rate')
+                    || msg.toLowerCase().includes('quota')
+                    || response.status === 429
+                    || response.status === 503;
+
+                if (isRateLimit && attempt < retries) {
+                    const waitMs = attempt * 2000; // 2s, 4s
+                    console.warn(`Rate limit soal ${blueprintItem.questionNumber}, retry ${attempt}/${retries} dalam ${waitMs}ms...`);
+                    await new Promise(r => setTimeout(r, waitMs));
+                    continue;
+                }
+                throw new Error(msg);
+            }
+
+            return data.question;
+
+        } catch (err) {
+            if (attempt === retries) throw err;
+            // Network error — coba lagi setelah 1.5 detik
+            await new Promise(r => setTimeout(r, 1500));
+        }
     }
-
-    return data.question;
 }
 
 // Expose ke app.js via window

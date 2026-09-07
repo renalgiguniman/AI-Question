@@ -179,31 +179,25 @@ document.addEventListener('DOMContentLoaded', () => {
             loadingDesc.textContent = 'Menyusun blueprint soal...';
             const blueprint = window.AIQEngine.generateBlueprint(currentConfig);
 
-            // Pecah blueprint menjadi beberapa kelompok (batch) isi 5 soal
-            // Tujuannya agar generasi cepat (tidak satu per satu) tapi tidak terkena limit timeout Vercel
-            const BATCH_SIZE = 5;
-            for (let i = 0; i < blueprint.length; i += BATCH_SIZE) {
-                const batch = blueprint.slice(i, i + BATCH_SIZE);
-                loadingDesc.textContent = `Membuat soal ${i + 1} sampai ${Math.min(i + BATCH_SIZE, blueprint.length)} dari ${blueprint.length}...`;
-                loadingCount.textContent = `Memproses batch...`;
+            for (let i = 0; i < blueprint.length; i++) {
+                const item = blueprint[i];
+                loadingDesc.textContent = `Membuat soal ${i + 1} dari ${blueprint.length}...`;
+                loadingCount.textContent = `Materi: ${item.material} | Bloom: ${item.bloomLevel} | Kesulitan: ${item.difficulty}`;
                 progressBar.style.width = `${((i) / blueprint.length) * 100}%`;
 
                 try {
-                    const batchQuestions = await window.AIQEngine.generateQuestionsBatchWithAI(batch, currentConfig);
-                    generatedQuestions.push(...batchQuestions);
+                    const q = await window.AIQEngine.generateQuestionWithAI(item, currentConfig);
+                    generatedQuestions.push(q);
                 } catch (err) {
-                    // Fallback jika satu batch error
-                    batch.forEach((item, index) => {
-                        generatedQuestions.push({
-                            id: 'err_' + Date.now() + i + index,
-                            question: `⚠️ Gagal Batch: ${err.message}`,
-                            options: { A: '-', B: '-', C: '-', D: '-' },
-                            correctAnswer: 'A',
-                            indicator: '-',
-                            ...item,
-                            locked: false,
-                            editedByUser: false,
-                        });
+                    generatedQuestions.push({
+                        id: 'err_' + Date.now() + i,
+                        question: `⚠️ Gagal: ${err.message}`,
+                        options: { A: '-', B: '-', C: '-', D: '-' },
+                        correctAnswer: 'A',
+                        indicator: '-',
+                        ...item,
+                        locked: false,
+                        editedByUser: false,
                     });
                 }
             }
