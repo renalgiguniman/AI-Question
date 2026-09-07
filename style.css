@@ -544,3 +544,197 @@ textarea:focus {
     .key-answer { background: none; color: black; border: 1px solid black; }
     #edit-modal { display: none !important; }
 }
+
+/* ================================================================
+   MOBILE RESPONSIVE
+   ================================================================ */
+
+/* --- Tablet (≤ 768px) --- */
+@media (max-width: 768px) {
+    .app-container {
+        padding: 1rem 0.75rem;
+    }
+
+    .app-header {
+        margin-bottom: 1.25rem;
+    }
+
+    h1 { font-size: 1.15rem; }
+    .app-header p { font-size: 0.75rem; }
+
+    .logo-icon { width: 26px; height: 26px; }
+
+    .panel {
+        padding: 1.25rem 1rem;
+        border-radius: var(--radius-md);
+    }
+
+    /* Form grid: 1 column on tablet */
+    .form-grid {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+
+    /* Bloom grid: 2 columns on tablet */
+    .bloom-grid {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 0.75rem;
+    }
+
+    /* Result header: stack vertically */
+    .result-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.75rem;
+    }
+
+    /* Tab buttons: stretch full width */
+    .result-actions {
+        width: 100%;
+        justify-content: stretch;
+    }
+    .btn-tab {
+        flex: 1;
+        font-size: 0.75rem;
+        padding: 0.5rem 0.5rem;
+    }
+
+    /* Export toolbar: wrap on small screens */
+    .export-toolbar {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        justify-content: flex-start;
+    }
+
+    /* Question cards */
+    .q-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+
+    .q-meta {
+        flex-wrap: wrap;
+        gap: 0.4rem;
+    }
+
+    /* Action buttons in card: wrap */
+    .q-actions {
+        flex-wrap: wrap;
+        gap: 0.4rem;
+    }
+
+    /* Key container: fewer columns */
+    .key-container {
+        grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+    }
+
+    /* Kisi-kisi table: horizontal scroll stays */
+    .kisi-table th, .kisi-table td {
+        padding: 0.5rem 0.6rem;
+        font-size: 0.8rem;
+    }
+
+    /* Modal: near full screen */
+    .modal-content {
+        margin: 0.75rem;
+        max-width: 100%;
+        padding: 1.25rem;
+    }
+
+    .modal-large {
+        max-width: 100%;
+        max-height: 95vh;
+    }
+
+    /* Loading card */
+    .loading-card {
+        margin: 1rem;
+        padding: 1.5rem;
+    }
+
+    /* Generate button */
+    .btn-large {
+        padding: 0.875rem 1.5rem;
+        font-size: 0.9rem;
+    }
+}
+
+/* --- Phone (≤ 480px) --- */
+@media (max-width: 480px) {
+    .app-container {
+        padding: 0.75rem 0.5rem;
+    }
+
+    h1 { font-size: 1rem; }
+
+    .logo { gap: 0.6rem; }
+    .logo-icon { width: 22px; height: 22px; }
+
+    .panel {
+        padding: 1rem 0.75rem;
+        margin-bottom: 1rem;
+    }
+
+    /* Bloom grid: 2 columns on phone */
+    .bloom-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    /* Materi row: stack on very small screens */
+    .materi-row {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+    .materi-row input[type="text"] {
+        min-width: 0;
+    }
+    .materi-row .input-suffix {
+        width: 80px;
+    }
+
+    /* Tab buttons: tiny text */
+    .btn-tab {
+        font-size: 0.68rem;
+        padding: 0.45rem 0.3rem;
+    }
+
+    /* Export toolbar: stack vertically */
+    .export-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .export-toolbar .btn {
+        width: 100%;
+        justify-content: center;
+    }
+
+    /* Question card actions: 2 per row */
+    .q-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+    }
+    .q-actions .btn { width: 100%; justify-content: center; }
+
+    /* Key container: more compact */
+    .key-container {
+        grid-template-columns: repeat(auto-fill, minmax(75px, 1fr));
+        gap: 0.5rem;
+    }
+
+    .key-item {
+        padding: 0.5rem 0.75rem;
+        font-size: 0.8rem;
+    }
+
+    /* Result header subtitle */
+    #result-subtitle { font-size: 0.8rem; }
+
+    /* modal actions: stack */
+    .modal-actions {
+        flex-direction: column-reverse;
+        gap: 0.5rem;
+    }
+    .modal-actions .btn { width: 100%; justify-content: center; }
+}
+

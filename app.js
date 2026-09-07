@@ -179,26 +179,31 @@ document.addEventListener('DOMContentLoaded', () => {
             loadingDesc.textContent = 'Menyusun blueprint soal...';
             const blueprint = window.AIQEngine.generateBlueprint(currentConfig);
 
-            for (let i = 0; i < blueprint.length; i++) {
-                const item = blueprint[i];
-                loadingDesc.textContent = `Membuat soal ${i + 1} dari ${blueprint.length}...`;
-                loadingCount.textContent = `Materi: ${item.material} | Bloom: ${item.bloomLevel} | Kesulitan: ${item.difficulty}`;
+            // Pecah blueprint menjadi beberapa kelompok (batch) isi 5 soal
+            // Tujuannya agar generasi cepat (tidak satu per satu) tapi tidak terkena limit timeout Vercel
+            const BATCH_SIZE = 5;
+            for (let i = 0; i < blueprint.length; i += BATCH_SIZE) {
+                const batch = blueprint.slice(i, i + BATCH_SIZE);
+                loadingDesc.textContent = `Membuat soal ${i + 1} sampai ${Math.min(i + BATCH_SIZE, blueprint.length)} dari ${blueprint.length}...`;
+                loadingCount.textContent = `Memproses batch...`;
                 progressBar.style.width = `${((i) / blueprint.length) * 100}%`;
 
                 try {
-                    const q = await window.AIQEngine.generateQuestionWithAI(item, currentConfig);
-                    generatedQuestions.push(q);
+                    const batchQuestions = await window.AIQEngine.generateQuestionsBatchWithAI(batch, currentConfig);
+                    generatedQuestions.push(...batchQuestions);
                 } catch (err) {
-                    // Fallback soal error — tampilkan pesan error asli dari server
-                    generatedQuestions.push({
-                        id: 'err_' + Date.now() + i,
-                        question: `⚠️ Gagal: ${err.message}`,
-                        options: { A: '-', B: '-', C: '-', D: '-' },
-                        correctAnswer: 'A',
-                        indicator: '-',
-                        ...item,
-                        locked: false,
-                        editedByUser: false,
+                    // Fallback jika satu batch error
+                    batch.forEach((item, index) => {
+                        generatedQuestions.push({
+                            id: 'err_' + Date.now() + i + index,
+                            question: `⚠️ Gagal Batch: ${err.message}`,
+                            options: { A: '-', B: '-', C: '-', D: '-' },
+                            correctAnswer: 'A',
+                            indicator: '-',
+                            ...item,
+                            locked: false,
+                            editedByUser: false,
+                        });
                     });
                 }
             }
@@ -406,74 +411,185 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const { Document, Packer, Paragraph, TextRun, AlignmentType, HeadingLevel } = docx;
+        const {
+            Document, Packer, Paragraph, TextRun, AlignmentType, HeadingLevel,
+            Table, TableRow, TableCell, WidthType, BorderStyle,
+            ShadingType, convertInchesToTwip
+        } = docx;
 
-        const doc = new Document({
-            sections: [{
-                properties: {},
-                children: [
+        const mapel  = currentConfig.mapel  || 'Mata Pelajaran';
+        const kelas  = `${currentConfig.jenjang} Kelas ${currentConfig.kelas}`;
+        const today  = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+
+        // --- helper paragraf kosong ---
+        const spacer = () => new Paragraph({ text: "" });
+
+        // ================================================================
+        // SECTION 1 — LEMBAR SOAL
+        // ================================================================
+        const soalChildren = [
+            new Paragraph({
+                alignment: AlignmentType.CENTER,
+                children: [new TextRun({ text: "LEMBAR SOAL PILIHAN GANDA", bold: true, size: 32, font: "Times New Roman" })],
+                spacing: { after: 0 },
+            }),
+            new Paragraph({
+                alignment: AlignmentType.CENTER,
+                children: [new TextRun({ text: `${mapel}  ·  ${kelas}`, size: 24, font: "Times New Roman" })],
+                spacing: { after: 200 },
+            }),
+            spacer(),
+        ];
+
+        generatedQuestions.forEach(q => {
+            soalChildren.push(
+                new Paragraph({
+                    alignment: AlignmentType.JUSTIFIED,
+                    spacing: { line: 360, after: 120 },
+                    children: [new TextRun({ text: `${q.questionNumber}. ${q.question}`, font: "Times New Roman", size: 24 })],
+                }),
+                ...['A', 'B', 'C', 'D'].map(letter =>
                     new Paragraph({
-                        text: "Lembar Soal Pilihan Ganda",
-                        heading: HeadingLevel.HEADING_1,
-                        alignment: AlignmentType.CENTER,
-                    }),
-                    new Paragraph({ text: "" }), // spacer
-                    ...generatedQuestions.flatMap(q => {
-                        return [
-                            new Paragraph({
-                                alignment: AlignmentType.JUSTIFIED,
-                                spacing: { line: 360 }, // 1.5 spacing (240 = 1, 360 = 1.5)
-                                children: [
-                                    new TextRun({ text: `${q.questionNumber}. ${q.question}`, font: "Times New Roman", size: 24 }) // size 24 = 12pt
-                                ]
-                            }),
-                            new Paragraph({
-                                alignment: AlignmentType.JUSTIFIED,
-                                spacing: { line: 360 },
-                                children: [
-                                    new TextRun({ text: `A. ${q.options.A}`, font: "Times New Roman", size: 24 })
-                                ]
-                            }),
-                            new Paragraph({
-                                alignment: AlignmentType.JUSTIFIED,
-                                spacing: { line: 360 },
-                                children: [
-                                    new TextRun({ text: `B. ${q.options.B}`, font: "Times New Roman", size: 24 })
-                                ]
-                            }),
-                            new Paragraph({
-                                alignment: AlignmentType.JUSTIFIED,
-                                spacing: { line: 360 },
-                                children: [
-                                    new TextRun({ text: `C. ${q.options.C}`, font: "Times New Roman", size: 24 })
-                                ]
-                            }),
-                            new Paragraph({
-                                alignment: AlignmentType.JUSTIFIED,
-                                spacing: { line: 360 },
-                                children: [
-                                    new TextRun({ text: `D. ${q.options.D}`, font: "Times New Roman", size: 24 })
-                                ]
-                            }),
-                            new Paragraph({ text: "" }) // spacer between questions
-                        ];
-                    }),
-                    // Kunci Jawaban (Page Break)
-                    new Paragraph({
-                        text: "Kunci Jawaban",
-                        heading: HeadingLevel.HEADING_1,
-                        alignment: AlignmentType.CENTER,
-                        pageBreakBefore: true,
-                    }),
-                    new Paragraph({ text: "" }),
-                    ...generatedQuestions.map(q => {
-                        return new Paragraph({
-                            spacing: { line: 360 },
-                            children: [
-                                new TextRun({ text: `${q.questionNumber}. ${q.correctAnswer}`, font: "Times New Roman", size: 24 })
-                            ]
+                        indent: { left: convertInchesToTwip(0.3) },
+                        spacing: { line: 360, after: 60 },
+                        children: [new TextRun({ text: `${letter}. ${q.options[letter]}`, font: "Times New Roman", size: 24 })],
+                    })
+                ),
+                spacer()
+            );
+        });
+
+        // ================================================================
+        // SECTION 2 — KUNCI JAWABAN (tabel rapi 5 kolom)
+        // ================================================================
+        const COLS = 5;
+        const keyRows = [];
+        // header
+        keyRows.push(
+            new TableRow({
+                tableHeader: true,
+                children: Array.from({ length: COLS }, (_, ci) =>
+                    new TableCell({
+                        shading: { type: ShadingType.CLEAR, fill: "4F46E5" },
+                        width: { size: Math.floor(9000 / COLS), type: WidthType.DXA },
+                        children: [new Paragraph({
+                            alignment: AlignmentType.CENTER,
+                            children: [new TextRun({ text: ci === 0 ? "No" : "No", bold: true, color: "FFFFFF", font: "Times New Roman", size: 22 })]
+                        })]
+                    })
+                )
+            })
+        );
+        // chunk questions into rows of COLS
+        for (let i = 0; i < generatedQuestions.length; i += COLS) {
+            const chunk = generatedQuestions.slice(i, i + COLS);
+            // pad to COLS
+            while (chunk.length < COLS) chunk.push(null);
+            keyRows.push(
+                new TableRow({
+                    children: chunk.map((q, ci) => {
+                        const bg = ci % 2 === 0 ? "F3F4F6" : "FFFFFF";
+                        return new TableCell({
+                            shading: { type: ShadingType.CLEAR, fill: bg },
+                            width: { size: Math.floor(9000 / COLS), type: WidthType.DXA },
+                            children: [new Paragraph({
+                                alignment: AlignmentType.CENTER,
+                                children: q ? [
+                                    new TextRun({ text: `${q.questionNumber}.  `, font: "Times New Roman", size: 22 }),
+                                    new TextRun({ text: q.correctAnswer, bold: true, font: "Times New Roman", size: 22, color: "4F46E5" }),
+                                ] : [new TextRun({ text: "", size: 22 })]
+                            })]
                         });
                     })
+                })
+            );
+        }
+
+        const kunciChildren = [
+            new Paragraph({
+                pageBreakBefore: true,
+                alignment: AlignmentType.CENTER,
+                children: [new TextRun({ text: "KUNCI JAWABAN", bold: true, size: 32, font: "Times New Roman" })],
+                spacing: { after: 0 },
+            }),
+            new Paragraph({
+                alignment: AlignmentType.CENTER,
+                children: [new TextRun({ text: `${mapel}  ·  ${kelas}`, size: 24, font: "Times New Roman" })],
+                spacing: { after: 300 },
+            }),
+            new Table({
+                width: { size: 9000, type: WidthType.DXA },
+                alignment: AlignmentType.CENTER,
+                rows: keyRows,
+            }),
+        ];
+
+        // ================================================================
+        // SECTION 3 — KISI-KISI (tabel lengkap)
+        // ================================================================
+        const headerCells = ["No", "Materi", "Level Bloom", "Kesulitan", "Indikator Soal", "Bentuk Soal"].map(txt =>
+            new TableCell({
+                shading: { type: ShadingType.CLEAR, fill: "4F46E5" },
+                children: [new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    children: [new TextRun({ text: txt, bold: true, color: "FFFFFF", font: "Times New Roman", size: 20 })]
+                })]
+            })
+        );
+
+        const kisiRows = [
+            new TableRow({ tableHeader: true, children: headerCells }),
+            ...generatedQuestions.map((q, idx) =>
+                new TableRow({
+                    children: [
+                        new TableCell({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: String(q.questionNumber), font: "Times New Roman", size: 20 })] })] }),
+                        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: q.material, font: "Times New Roman", size: 20 })] })] }),
+                        new TableCell({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: q.bloomLevel, font: "Times New Roman", size: 20 })] })] }),
+                        new TableCell({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: q.difficulty, font: "Times New Roman", size: 20 })] })] }),
+                        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: q.indicator, font: "Times New Roman", size: 20 })] })] }),
+                        new TableCell({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: "PG", font: "Times New Roman", size: 20 })] })] }),
+                    ]
+                })
+            )
+        ];
+
+        const kisiChildren = [
+            new Paragraph({
+                pageBreakBefore: true,
+                alignment: AlignmentType.CENTER,
+                children: [new TextRun({ text: "KISI-KISI SOAL", bold: true, size: 32, font: "Times New Roman" })],
+                spacing: { after: 0 },
+            }),
+            new Paragraph({
+                alignment: AlignmentType.CENTER,
+                children: [new TextRun({ text: `${mapel}  ·  ${kelas}  ·  Tanggal: ${today}`, size: 24, font: "Times New Roman" })],
+                spacing: { after: 300 },
+            }),
+            new Table({
+                width: { size: 9000, type: WidthType.DXA },
+                rows: kisiRows,
+            }),
+        ];
+
+        // ================================================================
+        // BUILD DOCUMENT
+        // ================================================================
+        const doc = new Document({
+            sections: [{
+                properties: {
+                    page: {
+                        margin: {
+                            top: convertInchesToTwip(1),
+                            bottom: convertInchesToTwip(1),
+                            left: convertInchesToTwip(1.25),
+                            right: convertInchesToTwip(1),
+                        }
+                    }
+                },
+                children: [
+                    ...soalChildren,
+                    ...kunciChildren,
+                    ...kisiChildren,
                 ]
             }]
         });
@@ -482,12 +598,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = url;
-            a.download = "Soal_AI_Generator.docx";
+            a.download = `Soal_${mapel.replace(/\s+/g, '_')}_${kelas.replace(/\s+/g, '_')}.docx`;
             a.click();
             window.URL.revokeObjectURL(url);
         }).catch(err => {
             console.error("Error creating DOCX:", err);
-            alert("Terjadi kesalahan saat membuat file Word.");
+            alert("Terjadi kesalahan saat membuat file Word: " + err.message);
         });
     };
 
