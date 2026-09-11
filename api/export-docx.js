@@ -1,6 +1,6 @@
 // api/export-docx.js
-// Generate file RTF (Rich Text Format) yang bisa dibuka Word
-// Format dirapikan: Tabel bergaris, header berwarna, spasi proporsional
+// Generate file Word menggunakan format HTML-to-Word
+// Dijamin 100% rapi, tabel tidak akan berantakan di Microsoft Word
 
 export default async function handler(req, res) {
     if (req.method !== 'POST') {
@@ -13,175 +13,119 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'Data soal tidak valid.' });
     }
 
-    const mapel = (config?.mapel || 'Mata Pelajaran').replace(/[\\{}]/g, '');
+    const mapel = (config?.mapel || 'Mata Pelajaran').replace(/[<>&"']/g, '');
     const kelas = config ? `${config.jenjang} Kelas ${config.kelas}` : '';
     const today = new Date().toLocaleDateString('id-ID', {
         day: 'numeric', month: 'long', year: 'numeric'
     });
 
-    // RTF helper: escape special characters
-    function esc(str = '') {
-        return String(str)
-            .replace(/\\/g, '\\\\')
-            .replace(/\{/g, '\\{')
-            .replace(/\}/g, '\\}')
-            .replace(/[^\x00-\x7F]/g, ch => `\\u${ch.charCodeAt(0)}?`);
-    }
-
-    // RTF formatting constants
-    const br = '\\par\n';
-    const pb = '\\page\n'; // page break
-    // border definition for table cells (solid, width 10)
-    const brdr = '\\clbrdrt\\brdrs\\brdrw10 \\clbrdrl\\brdrs\\brdrw10 \\clbrdrb\\brdrs\\brdrw10 \\clbrdrr\\brdrs\\brdrw10';
-    // cell background color (color index 2 in colortbl)
-    const shadeHeader = '\\clcbpat2';
-
-    // Headers & Paragraphs
-    function heading(text) {
-        return `\\pard\\qc\\b\\fs32 ${esc(text)}\\b0\\fs24${br}`;
-    }
-    function subheading(text) {
-        return `\\pard\\qc\\b\\fs24 ${esc(text)}\\b0\\fs24\\sa240${br}`;
-    }
-    function soalPara(text) {
-        return `\\pard\\qj\\fi0\\li0\\sl360\\slmult1\\fs24 ${esc(text)}${br}`; // 1.5 line spacing
-    }
-    function pilihanPara(text) {
-        return `\\pard\\qj\\fi0\\li500\\sl360\\slmult1\\fs24 ${esc(text)}${br}`; // 1.5 line spacing, left indent
-    }
-
-    // ============================================================
-    // SECTION 1 — LEMBAR SOAL
-    // ============================================================
-    let soalContent = heading('LEMBAR SOAL PILIHAN GANDA');
-    soalContent += subheading(`${mapel}  |  ${kelas}`);
-    soalContent += br;
+    let html = `
+    <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+    <head>
+        <meta charset="utf-8">
+        <style>
+            /* Reset dan styling dasar untuk Word */
+            body { font-family: 'Times New Roman', serif; font-size: 12pt; color: #000; }
+            h1 { text-align: center; font-size: 16pt; font-weight: bold; margin-bottom: 0; }
+            h2 { text-align: center; font-size: 12pt; font-weight: normal; margin-top: 5px; margin-bottom: 25px; }
+            
+            /* Styling Soal */
+            .question { text-align: justify; margin-bottom: 12px; line-height: 1.5; }
+            .option { text-align: justify; margin-left: 25px; margin-bottom: 6px; line-height: 1.5; }
+            .spacer { margin-bottom: 25px; }
+            
+            /* Styling Tabel */
+            table { width: 100%; border-collapse: collapse; margin-bottom: 25px; }
+            th, td { border: 1pt solid black; padding: 8px 10px; vertical-align: top; line-height: 1.3; }
+            th { background-color: #e2e8f0; font-weight: bold; text-align: center; }
+            .text-center { text-align: center; }
+            
+            /* Pembatas Halaman */
+            .page-break { page-break-before: always; }
+        </style>
+    </head>
+    <body>
+        <!-- ================= SECTION 1: SOAL ================= -->
+        <h1>LEMBAR SOAL PILIHAN GANDA</h1>
+        <h2>${mapel} | ${kelas}</h2>
+    `;
 
     questions.forEach(q => {
-        soalContent += soalPara(`${q.questionNumber}. ${q.question}`);
+        html += `<div class="question">${q.questionNumber}. ${q.question}</div>`;
         ['A', 'B', 'C', 'D'].forEach(letter => {
-            soalContent += pilihanPara(`${letter}. ${q.options?.[letter] || ''}`);
+            if (q.options?.[letter]) {
+                html += `<div class="option">${letter}. ${q.options[letter]}</div>`;
+            }
         });
-        soalContent += `\\pard\\sa120${br}`; // Spasi antar soal
+        html += `<div class="spacer"></div>`;
     });
 
-    // ============================================================
-    // SECTION 2 — KUNCI JAWABAN (tabel bergaris)
-    // ============================================================
+    // ================= SECTION 2: KUNCI JAWABAN =================
+    html += `
+        <div class="page-break"></div>
+        <h1>KUNCI JAWABAN</h1>
+        <h2>${mapel} | ${kelas}</h2>
+        <table>
+            <tr>
+                <th width="20%">No &mdash; Jawaban</th>
+                <th width="20%">No &mdash; Jawaban</th>
+                <th width="20%">No &mdash; Jawaban</th>
+                <th width="20%">No &mdash; Jawaban</th>
+                <th width="20%">No &mdash; Jawaban</th>
+            </tr>
+    `;
     const COLS = 5;
-    const colW = 1800; // twips per column (Total 9000 twips ~ 15.8cm)
-
-    function rtfKunciRow(cells, isHeader = false) {
-        let row = `\\trowd\\trgaph108\\trleft0`;
-        // Setup cell borders and widths
-        cells.forEach((_, i) => {
-            row += `\\cellx${colW * (i + 1)} ${brdr} ${isHeader ? shadeHeader : ''}`;
-        });
-        row += '\n';
-        // Fill cell data
-        cells.forEach(cell => {
-            const bold = isHeader ? '\\b ' : '';
-            row += `\\pard\\intbl\\qc\\sl240\\slmult1\\sa60\\sb60 ${bold}${esc(cell)}${isHeader ? '\\b0' : ''}\\cell\n`;
-        });
-        row += '\\row\n';
-        return row;
-    }
-
-    let kunciContent = pb;
-    kunciContent += heading('KUNCI JAWABAN');
-    kunciContent += subheading(`${mapel}  |  ${kelas}`);
-    kunciContent += br;
-
-    // Header Kunci
-    kunciContent += rtfKunciRow(['No — Jawaban', 'No — Jawaban', 'No — Jawaban', 'No — Jawaban', 'No — Jawaban'], true);
-
-    // Rows Kunci
     for (let i = 0; i < questions.length; i += COLS) {
-        const chunk = questions.slice(i, i + COLS);
-        while (chunk.length < COLS) chunk.push(null);
-        const cells = chunk.map(q => q ? `${q.questionNumber}.  ${q.correctAnswer}` : '');
-        kunciContent += rtfKunciRow(cells);
+        html += `<tr>`;
+        for (let j = 0; j < COLS; j++) {
+            const q = questions[i + j];
+            if (q) {
+                html += `<td class="text-center"><b>${q.questionNumber}.</b> ${q.correctAnswer}</td>`;
+            } else {
+                html += `<td></td>`;
+            }
+        }
+        html += `</tr>`;
     }
-    kunciContent += br;
+    html += `</table>`;
 
-    // ============================================================
-    // SECTION 3 — KISI-KISI (tabel bergaris, lebar kolom spesifik)
-    // ============================================================
-    // Proporsi lebar kolom (Total ~ 9200 twips)
-    const wNo = 600;
-    const wMateri = 2200;
-    const wBloom = 1000;
-    const wSulit = 1200;
-    const wIndikator = 3400;
-    const wBentuk = 800;
-    
-    // Akumulasi posisi kanan tiap sel untuk RTF \cellx
-    const pos1 = wNo;
-    const pos2 = pos1 + wMateri;
-    const pos3 = pos2 + wBloom;
-    const pos4 = pos3 + wSulit;
-    const pos5 = pos4 + wIndikator;
-    const pos6 = pos5 + wBentuk;
-
-    function rtfKisiRow(cells, isHeader = false) {
-        let row = `\\trowd\\trgaph108\\trleft0`;
-        const shade = isHeader ? shadeHeader : '';
-        // Setup cell widths and borders
-        row += `\\cellx${pos1} ${brdr} ${shade}`;
-        row += `\\cellx${pos2} ${brdr} ${shade}`;
-        row += `\\cellx${pos3} ${brdr} ${shade}`;
-        row += `\\cellx${pos4} ${brdr} ${shade}`;
-        row += `\\cellx${pos5} ${brdr} ${shade}`;
-        row += `\\cellx${pos6} ${brdr} ${shade}\n`;
-        
-        // Fill cell data
-        cells.forEach((cell, i) => {
-            const bold = isHeader ? '\\b ' : '';
-            // Kolom angka/pendek rata tengah, sisanya rata kiri-kanan
-            const align = (i === 0 || i === 2 || i === 3 || i === 5) && !isHeader ? '\\qc' : '\\qj';
-            row += `\\pard\\intbl${align}\\sl240\\slmult1\\sa60\\sb60 ${bold}${esc(cell)}${isHeader ? '\\b0' : ''}\\cell\n`;
-        });
-        row += '\\row\n';
-        return row;
-    }
-
-    let kisiContent = pb;
-    kisiContent += heading('KISI-KISI SOAL');
-    kisiContent += subheading(`${mapel}  |  ${kelas}  |  ${today}`);
-    kisiContent += br;
-
-    // Header Kisi
-    kisiContent += rtfKisiRow(['No', 'Materi', 'Level Bloom', 'Kesulitan', 'Indikator Soal', 'Bentuk'], true);
-
-    // Data Kisi
+    // ================= SECTION 3: KISI-KISI =================
+    html += `
+        <div class="page-break"></div>
+        <h1>KISI-KISI SOAL</h1>
+        <h2>${mapel} | ${kelas} | ${today}</h2>
+        <table>
+            <tr>
+                <th width="5%">No</th>
+                <th width="20%">Materi</th>
+                <th width="12%">Level Bloom</th>
+                <th width="12%">Kesulitan</th>
+                <th width="41%">Indikator Soal</th>
+                <th width="10%">Bentuk</th>
+            </tr>
+    `;
     questions.forEach(q => {
-        kisiContent += rtfKisiRow([
-            String(q.questionNumber),
-            q.material || '',
-            q.bloomLevel || '',
-            q.difficulty || '',
-            q.indicator || '',
-            'PG'
-        ]);
+        html += `
+            <tr>
+                <td class="text-center">${q.questionNumber}</td>
+                <td>${q.material || ''}</td>
+                <td class="text-center">${q.bloomLevel || ''}</td>
+                <td class="text-center">${q.difficulty || ''}</td>
+                <td>${q.indicator || ''}</td>
+                <td class="text-center">PG</td>
+            </tr>
+        `;
     });
-
-    // ============================================================
-    // BUILD RTF DOCUMENT
-    // ============================================================
-    // colortbl: 1 = black, 2 = light gray (for table headers)
-    const rtf = `{\\rtf1\\ansi\\deff0
-{\\fonttbl{\\f0\\froman\\fcharset0 Times New Roman;}}
-{\\colortbl;\\red0\\green0\\blue0;\\red230\\green230\\blue230;}
-\\margl1440\\margr1440\\margt1440\\margb1440
-\\f0\\fs24\\widowctrl\\hyphauto
-${soalContent}
-${kunciContent}
-${kisiContent}
-}`;
+    html += `
+        </table>
+    </body>
+    </html>
+    `;
 
     const filename = `Soal_${mapel.replace(/\s+/g, '_')}_${kelas.replace(/\s+/g, '_')}.doc`;
 
+    // Kirim sebagai file word (.doc)
     res.setHeader('Content-Type', 'application/msword');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    return res.status(200).send(rtf);
+    return res.status(200).send(Buffer.from(html, 'utf8'));
 }
