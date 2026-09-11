@@ -1,12 +1,7 @@
-// api/export-docx.js — Vercel Serverless Function
-// Membuat file DOCX di server menggunakan npm package 'docx'
-// Tidak butuh library CDN di browser sama sekali.
-
-import {
-    Document, Packer, Paragraph, TextRun, AlignmentType,
-    Table, TableRow, TableCell, WidthType, ShadingType,
-    convertInchesToTwip, HeadingLevel
-} from 'docx';
+// api/export-docx.js
+// Generate file RTF (Rich Text Format) yang bisa dibuka Word
+// TANPA library eksternal - murni Node.js built-in
+// File .docx didownload tapi isinya RTF yang valid untuk Word
 
 export default async function handler(req, res) {
     if (req.method !== 'POST') {
@@ -19,187 +14,147 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'Data soal tidak valid.' });
     }
 
-    const mapel = config?.mapel || 'Mata Pelajaran';
+    const mapel = (config?.mapel || 'Mata Pelajaran').replace(/[\\{}]/g, '');
     const kelas = config ? `${config.jenjang} Kelas ${config.kelas}` : '';
     const today = new Date().toLocaleDateString('id-ID', {
         day: 'numeric', month: 'long', year: 'numeric'
     });
 
-    const spacer = () => new Paragraph({ text: '' });
+    // RTF helper: escape special characters
+    function esc(str = '') {
+        return String(str)
+            .replace(/\\/g, '\\\\')
+            .replace(/\{/g, '\\{')
+            .replace(/\}/g, '\\}')
+            // Latin chars dengan aksen (untuk bahasa Indonesia)
+            .replace(/[^\x00-\x7F]/g, ch => {
+                const code = ch.charCodeAt(0);
+                return `\\u${code}?`;
+            });
+    }
+
+    // RTF paragraph helpers
+    const br  = '\\par\n';
+    const pb  = '\\page\n'; // page break
+
+    function heading(text) {
+        return `\\pard\\qc\\b\\fs32 ${esc(text)}\\b0\\fs24${br}`;
+    }
+    function subheading(text) {
+        return `\\pard\\qc\\fs22 ${esc(text)}\\fs24${br}`;
+    }
+    function soalPara(text) {
+        return `\\pard\\qj\\fi0\\li0\\fs24 ${esc(text)}${br}`;
+    }
+    function pilihanPara(text) {
+        return `\\pard\\qj\\fi0\\li720\\fs24 ${esc(text)}${br}`;
+    }
 
     // ============================================================
     // SECTION 1 — LEMBAR SOAL
     // ============================================================
-    const soalChildren = [
-        new Paragraph({
-            alignment: AlignmentType.CENTER,
-            spacing: { after: 0 },
-            children: [new TextRun({ text: 'LEMBAR SOAL PILIHAN GANDA', bold: true, size: 32, font: 'Times New Roman' })],
-        }),
-        new Paragraph({
-            alignment: AlignmentType.CENTER,
-            spacing: { after: 240 },
-            children: [new TextRun({ text: `${mapel}  ·  ${kelas}`, size: 24, font: 'Times New Roman' })],
-        }),
-        spacer(),
-    ];
+    let soalContent = heading('LEMBAR SOAL PILIHAN GANDA');
+    soalContent += subheading(`${mapel}  |  ${kelas}`);
+    soalContent += br;
 
     questions.forEach(q => {
-        soalChildren.push(
-            new Paragraph({
-                alignment: AlignmentType.JUSTIFIED,
-                spacing: { line: 360, after: 120 },
-                children: [new TextRun({ text: `${q.questionNumber}. ${q.question}`, font: 'Times New Roman', size: 24 })],
-            }),
-            ...['A', 'B', 'C', 'D'].map(letter =>
-                new Paragraph({
-                    indent: { left: convertInchesToTwip(0.3) },
-                    spacing: { line: 360, after: 60 },
-                    children: [new TextRun({ text: `${letter}. ${q.options[letter] || ''}`, font: 'Times New Roman', size: 24 })],
-                })
-            ),
-            spacer()
-        );
+        soalContent += soalPara(`${q.questionNumber}. ${q.question}`);
+        ['A', 'B', 'C', 'D'].forEach(letter => {
+            soalContent += pilihanPara(`${letter}. ${q.options?.[letter] || ''}`);
+        });
+        soalContent += br;
     });
 
     // ============================================================
-    // SECTION 2 — KUNCI JAWABAN (tabel rapi 5 kolom)
+    // SECTION 2 — KUNCI JAWABAN (tabel)
     // ============================================================
     const COLS = 5;
-    const headerRow = new TableRow({
-        tableHeader: true,
-        children: Array.from({ length: COLS }, () =>
-            new TableCell({
-                shading: { type: ShadingType.CLEAR, fill: '4F46E5' },
-                width: { size: Math.floor(9000 / COLS), type: WidthType.DXA },
-                children: [new Paragraph({
-                    alignment: AlignmentType.CENTER,
-                    children: [new TextRun({ text: 'No — Jawaban', bold: true, color: 'FFFFFF', font: 'Times New Roman', size: 22 })]
-                })]
-            })
-        )
-    });
+    const colW = 1800; // twips per column
+    const totalW = colW * COLS;
 
-    const keyDataRows = [];
-    for (let i = 0; i < questions.length; i += COLS) {
-        const chunk = [...questions.slice(i, i + COLS)];
-        while (chunk.length < COLS) chunk.push(null);
-        keyDataRows.push(
-            new TableRow({
-                children: chunk.map((q, ci) =>
-                    new TableCell({
-                        shading: { type: ShadingType.CLEAR, fill: ci % 2 === 0 ? 'F3F4F6' : 'FFFFFF' },
-                        width: { size: Math.floor(9000 / COLS), type: WidthType.DXA },
-                        children: [new Paragraph({
-                            alignment: AlignmentType.CENTER,
-                            children: q ? [
-                                new TextRun({ text: `${q.questionNumber}.  `, font: 'Times New Roman', size: 22 }),
-                                new TextRun({ text: q.correctAnswer, bold: true, color: '4F46E5', font: 'Times New Roman', size: 22 }),
-                            ] : [new TextRun({ text: '', size: 22 })]
-                        })]
-                    })
-                )
-            })
-        );
-    }
-
-    const kunciChildren = [
-        new Paragraph({
-            pageBreakBefore: true,
-            alignment: AlignmentType.CENTER,
-            spacing: { after: 0 },
-            children: [new TextRun({ text: 'KUNCI JAWABAN', bold: true, size: 32, font: 'Times New Roman' })],
-        }),
-        new Paragraph({
-            alignment: AlignmentType.CENTER,
-            spacing: { after: 300 },
-            children: [new TextRun({ text: `${mapel}  ·  ${kelas}`, size: 24, font: 'Times New Roman' })],
-        }),
-        new Table({
-            width: { size: 9000, type: WidthType.DXA },
-            alignment: AlignmentType.CENTER,
-            rows: [headerRow, ...keyDataRows],
-        }),
-    ];
-
-    // ============================================================
-    // SECTION 3 — KISI-KISI
-    // ============================================================
-    const kisiHeaderCols = ['No', 'Materi', 'Level Bloom', 'Kesulitan', 'Indikator Soal', 'Bentuk Soal'];
-    const kisiHeaderRow = new TableRow({
-        tableHeader: true,
-        children: kisiHeaderCols.map(txt =>
-            new TableCell({
-                shading: { type: ShadingType.CLEAR, fill: '4F46E5' },
-                children: [new Paragraph({
-                    alignment: AlignmentType.CENTER,
-                    children: [new TextRun({ text: txt, bold: true, color: 'FFFFFF', font: 'Times New Roman', size: 20 })]
-                })]
-            })
-        )
-    });
-
-    const kisiDataRows = questions.map(q =>
-        new TableRow({
-            children: [
-                new TableCell({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: String(q.questionNumber), font: 'Times New Roman', size: 20 })] })] }),
-                new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: q.material || '', font: 'Times New Roman', size: 20 })] })] }),
-                new TableCell({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: q.bloomLevel || '', font: 'Times New Roman', size: 20 })] })] }),
-                new TableCell({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: q.difficulty || '', font: 'Times New Roman', size: 20 })] })] }),
-                new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: q.indicator || '', font: 'Times New Roman', size: 20 })] })] }),
-                new TableCell({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: 'PG', font: 'Times New Roman', size: 20 })] })] }),
-            ]
-        })
-    );
-
-    const kisiChildren = [
-        new Paragraph({
-            pageBreakBefore: true,
-            alignment: AlignmentType.CENTER,
-            spacing: { after: 0 },
-            children: [new TextRun({ text: 'KISI-KISI SOAL', bold: true, size: 32, font: 'Times New Roman' })],
-        }),
-        new Paragraph({
-            alignment: AlignmentType.CENTER,
-            spacing: { after: 300 },
-            children: [new TextRun({ text: `${mapel}  ·  ${kelas}  ·  ${today}`, size: 24, font: 'Times New Roman' })],
-        }),
-        new Table({
-            width: { size: 9000, type: WidthType.DXA },
-            rows: [kisiHeaderRow, ...kisiDataRows],
-        }),
-    ];
-
-    // ============================================================
-    // BUILD & SEND
-    // ============================================================
-    try {
-        const doc = new Document({
-            sections: [{
-                properties: {
-                    page: {
-                        margin: {
-                            top: convertInchesToTwip(1),
-                            bottom: convertInchesToTwip(1),
-                            left: convertInchesToTwip(1.25),
-                            right: convertInchesToTwip(1),
-                        }
-                    }
-                },
-                children: [...soalChildren, ...kunciChildren, ...kisiChildren],
-            }]
+    function rtfTableRow(cells, isBold = false) {
+        let row = `\\trowd\\trgaph108\\trleft0`;
+        cells.forEach((_, i) => {
+            row += `\\cellx${colW * (i + 1)}`;
         });
-
-        const buffer = await Packer.toBuffer(doc);
-        const filename = `Soal_${mapel.replace(/\s+/g, '_')}_${kelas.replace(/\s+/g, '_')}.docx`;
-
-        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-        res.setHeader('Content-Length', buffer.length);
-        return res.status(200).send(buffer);
-
-    } catch (err) {
-        console.error('Error membuat DOCX:', err);
-        return res.status(500).json({ error: 'Gagal membuat file DOCX: ' + err.message });
+        row += '\n';
+        cells.forEach(cell => {
+            const bold = isBold ? '\\b ' : '';
+            row += `\\pard\\intbl\\qc ${bold}${esc(cell)}${isBold ? '\\b0' : ''}\\cell\n`;
+        });
+        row += '\\row\n';
+        return row;
     }
+
+    let kunciContent = pb;
+    kunciContent += heading('KUNCI JAWABAN');
+    kunciContent += subheading(`${mapel}  |  ${kelas}`);
+    kunciContent += br;
+
+    // Header kunci
+    kunciContent += rtfTableRow(['No — Jawaban', 'No — Jawaban', 'No — Jawaban', 'No — Jawaban', 'No — Jawaban'], true);
+
+    // Rows kunci
+    for (let i = 0; i < questions.length; i += COLS) {
+        const chunk = questions.slice(i, i + COLS);
+        while (chunk.length < COLS) chunk.push(null);
+        const cells = chunk.map(q => q ? `${q.questionNumber}.  ${q.correctAnswer}` : '');
+        kunciContent += rtfTableRow(cells);
+    }
+    kunciContent += br;
+
+    // ============================================================
+    // SECTION 3 — KISI-KISI (tabel)
+    // ============================================================
+    const kisiCols = 6;
+    const kisiColW = Math.floor(9000 / kisiCols);
+
+    function rtfKisiRow(cells, isBold = false) {
+        let row = `\\trowd\\trgaph108\\trleft0`;
+        cells.forEach((_, i) => {
+            row += `\\cellx${kisiColW * (i + 1)}`;
+        });
+        row += '\n';
+        cells.forEach(cell => {
+            const bold = isBold ? '\\b ' : '';
+            row += `\\pard\\intbl\\ql ${bold}${esc(cell)}${isBold ? '\\b0' : ''}\\cell\n`;
+        });
+        row += '\\row\n';
+        return row;
+    }
+
+    let kisiContent = pb;
+    kisiContent += heading('KISI-KISI SOAL');
+    kisiContent += subheading(`${mapel}  |  ${kelas}  |  ${today}`);
+    kisiContent += br;
+
+    kisiContent += rtfKisiRow(['No', 'Materi', 'Level Bloom', 'Kesulitan', 'Indikator Soal', 'Bentuk Soal'], true);
+    questions.forEach(q => {
+        kisiContent += rtfKisiRow([
+            String(q.questionNumber),
+            q.material || '',
+            q.bloomLevel || '',
+            q.difficulty || '',
+            q.indicator || '',
+            'PG'
+        ]);
+    });
+
+    // ============================================================
+    // BUILD RTF DOCUMENT
+    // ============================================================
+    const rtf = `{\\rtf1\\ansi\\deff0
+{\\fonttbl{\\f0\\froman\\fcharset0 Times New Roman;}}
+{\\colortbl;\\red0\\green0\\blue0;\\red79\\green70\\blue229;}
+\\f0\\fs24\\widowctrl\\hyphauto
+${soalContent}
+${kunciContent}
+${kisiContent}
+}`;
+
+    const filename = `Soal_${mapel.replace(/\s+/g, '_')}_${kelas.replace(/\s+/g, '_')}.doc`;
+
+    res.setHeader('Content-Type', 'application/msword');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.status(200).send(rtf);
 }
