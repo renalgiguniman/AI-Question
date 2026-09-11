@@ -1,7 +1,6 @@
 // api/export-docx.js
 // Generate file RTF (Rich Text Format) yang bisa dibuka Word
-// TANPA library eksternal - murni Node.js built-in
-// File .docx didownload tapi isinya RTF yang valid untuk Word
+// Format dirapikan: Tabel bergaris, header berwarna, spasi proporsional
 
 export default async function handler(req, res) {
     if (req.method !== 'POST') {
@@ -26,28 +25,29 @@ export default async function handler(req, res) {
             .replace(/\\/g, '\\\\')
             .replace(/\{/g, '\\{')
             .replace(/\}/g, '\\}')
-            // Latin chars dengan aksen (untuk bahasa Indonesia)
-            .replace(/[^\x00-\x7F]/g, ch => {
-                const code = ch.charCodeAt(0);
-                return `\\u${code}?`;
-            });
+            .replace(/[^\x00-\x7F]/g, ch => `\\u${ch.charCodeAt(0)}?`);
     }
 
-    // RTF paragraph helpers
-    const br  = '\\par\n';
-    const pb  = '\\page\n'; // page break
+    // RTF formatting constants
+    const br = '\\par\n';
+    const pb = '\\page\n'; // page break
+    // border definition for table cells (solid, width 10)
+    const brdr = '\\clbrdrt\\brdrs\\brdrw10 \\clbrdrl\\brdrs\\brdrw10 \\clbrdrb\\brdrs\\brdrw10 \\clbrdrr\\brdrs\\brdrw10';
+    // cell background color (color index 2 in colortbl)
+    const shadeHeader = '\\clcbpat2';
 
+    // Headers & Paragraphs
     function heading(text) {
         return `\\pard\\qc\\b\\fs32 ${esc(text)}\\b0\\fs24${br}`;
     }
     function subheading(text) {
-        return `\\pard\\qc\\fs22 ${esc(text)}\\fs24${br}`;
+        return `\\pard\\qc\\b\\fs24 ${esc(text)}\\b0\\fs24\\sa240${br}`;
     }
     function soalPara(text) {
-        return `\\pard\\qj\\fi0\\li0\\fs24 ${esc(text)}${br}`;
+        return `\\pard\\qj\\fi0\\li0\\sl360\\slmult1\\fs24 ${esc(text)}${br}`; // 1.5 line spacing
     }
     function pilihanPara(text) {
-        return `\\pard\\qj\\fi0\\li720\\fs24 ${esc(text)}${br}`;
+        return `\\pard\\qj\\fi0\\li500\\sl360\\slmult1\\fs24 ${esc(text)}${br}`; // 1.5 line spacing, left indent
     }
 
     // ============================================================
@@ -62,25 +62,26 @@ export default async function handler(req, res) {
         ['A', 'B', 'C', 'D'].forEach(letter => {
             soalContent += pilihanPara(`${letter}. ${q.options?.[letter] || ''}`);
         });
-        soalContent += br;
+        soalContent += `\\pard\\sa120${br}`; // Spasi antar soal
     });
 
     // ============================================================
-    // SECTION 2 — KUNCI JAWABAN (tabel)
+    // SECTION 2 — KUNCI JAWABAN (tabel bergaris)
     // ============================================================
     const COLS = 5;
-    const colW = 1800; // twips per column
-    const totalW = colW * COLS;
+    const colW = 1800; // twips per column (Total 9000 twips ~ 15.8cm)
 
-    function rtfTableRow(cells, isBold = false) {
+    function rtfKunciRow(cells, isHeader = false) {
         let row = `\\trowd\\trgaph108\\trleft0`;
+        // Setup cell borders and widths
         cells.forEach((_, i) => {
-            row += `\\cellx${colW * (i + 1)}`;
+            row += `\\cellx${colW * (i + 1)} ${brdr} ${isHeader ? shadeHeader : ''}`;
         });
         row += '\n';
+        // Fill cell data
         cells.forEach(cell => {
-            const bold = isBold ? '\\b ' : '';
-            row += `\\pard\\intbl\\qc ${bold}${esc(cell)}${isBold ? '\\b0' : ''}\\cell\n`;
+            const bold = isHeader ? '\\b ' : '';
+            row += `\\pard\\intbl\\qc\\sl240\\slmult1\\sa60\\sb60 ${bold}${esc(cell)}${isHeader ? '\\b0' : ''}\\cell\n`;
         });
         row += '\\row\n';
         return row;
@@ -91,33 +92,54 @@ export default async function handler(req, res) {
     kunciContent += subheading(`${mapel}  |  ${kelas}`);
     kunciContent += br;
 
-    // Header kunci
-    kunciContent += rtfTableRow(['No — Jawaban', 'No — Jawaban', 'No — Jawaban', 'No — Jawaban', 'No — Jawaban'], true);
+    // Header Kunci
+    kunciContent += rtfKunciRow(['No — Jawaban', 'No — Jawaban', 'No — Jawaban', 'No — Jawaban', 'No — Jawaban'], true);
 
-    // Rows kunci
+    // Rows Kunci
     for (let i = 0; i < questions.length; i += COLS) {
         const chunk = questions.slice(i, i + COLS);
         while (chunk.length < COLS) chunk.push(null);
         const cells = chunk.map(q => q ? `${q.questionNumber}.  ${q.correctAnswer}` : '');
-        kunciContent += rtfTableRow(cells);
+        kunciContent += rtfKunciRow(cells);
     }
     kunciContent += br;
 
     // ============================================================
-    // SECTION 3 — KISI-KISI (tabel)
+    // SECTION 3 — KISI-KISI (tabel bergaris, lebar kolom spesifik)
     // ============================================================
-    const kisiCols = 6;
-    const kisiColW = Math.floor(9000 / kisiCols);
+    // Proporsi lebar kolom (Total ~ 9200 twips)
+    const wNo = 600;
+    const wMateri = 2200;
+    const wBloom = 1000;
+    const wSulit = 1200;
+    const wIndikator = 3400;
+    const wBentuk = 800;
+    
+    // Akumulasi posisi kanan tiap sel untuk RTF \cellx
+    const pos1 = wNo;
+    const pos2 = pos1 + wMateri;
+    const pos3 = pos2 + wBloom;
+    const pos4 = pos3 + wSulit;
+    const pos5 = pos4 + wIndikator;
+    const pos6 = pos5 + wBentuk;
 
-    function rtfKisiRow(cells, isBold = false) {
+    function rtfKisiRow(cells, isHeader = false) {
         let row = `\\trowd\\trgaph108\\trleft0`;
-        cells.forEach((_, i) => {
-            row += `\\cellx${kisiColW * (i + 1)}`;
-        });
-        row += '\n';
-        cells.forEach(cell => {
-            const bold = isBold ? '\\b ' : '';
-            row += `\\pard\\intbl\\ql ${bold}${esc(cell)}${isBold ? '\\b0' : ''}\\cell\n`;
+        const shade = isHeader ? shadeHeader : '';
+        // Setup cell widths and borders
+        row += `\\cellx${pos1} ${brdr} ${shade}`;
+        row += `\\cellx${pos2} ${brdr} ${shade}`;
+        row += `\\cellx${pos3} ${brdr} ${shade}`;
+        row += `\\cellx${pos4} ${brdr} ${shade}`;
+        row += `\\cellx${pos5} ${brdr} ${shade}`;
+        row += `\\cellx${pos6} ${brdr} ${shade}\n`;
+        
+        // Fill cell data
+        cells.forEach((cell, i) => {
+            const bold = isHeader ? '\\b ' : '';
+            // Kolom angka/pendek rata tengah, sisanya rata kiri-kanan
+            const align = (i === 0 || i === 2 || i === 3 || i === 5) && !isHeader ? '\\qc' : '\\qj';
+            row += `\\pard\\intbl${align}\\sl240\\slmult1\\sa60\\sb60 ${bold}${esc(cell)}${isHeader ? '\\b0' : ''}\\cell\n`;
         });
         row += '\\row\n';
         return row;
@@ -128,7 +150,10 @@ export default async function handler(req, res) {
     kisiContent += subheading(`${mapel}  |  ${kelas}  |  ${today}`);
     kisiContent += br;
 
-    kisiContent += rtfKisiRow(['No', 'Materi', 'Level Bloom', 'Kesulitan', 'Indikator Soal', 'Bentuk Soal'], true);
+    // Header Kisi
+    kisiContent += rtfKisiRow(['No', 'Materi', 'Level Bloom', 'Kesulitan', 'Indikator Soal', 'Bentuk'], true);
+
+    // Data Kisi
     questions.forEach(q => {
         kisiContent += rtfKisiRow([
             String(q.questionNumber),
@@ -143,9 +168,11 @@ export default async function handler(req, res) {
     // ============================================================
     // BUILD RTF DOCUMENT
     // ============================================================
+    // colortbl: 1 = black, 2 = light gray (for table headers)
     const rtf = `{\\rtf1\\ansi\\deff0
 {\\fonttbl{\\f0\\froman\\fcharset0 Times New Roman;}}
-{\\colortbl;\\red0\\green0\\blue0;\\red79\\green70\\blue229;}
+{\\colortbl;\\red0\\green0\\blue0;\\red230\\green230\\blue230;}
+\\margl1440\\margr1440\\margt1440\\margb1440
 \\f0\\fs24\\widowctrl\\hyphauto
 ${soalContent}
 ${kunciContent}
