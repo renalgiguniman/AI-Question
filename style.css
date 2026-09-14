@@ -806,6 +806,145 @@ input:focus, select:focus, textarea:focus {
     font-size: 0.85rem;
 }
 
+/* ---- Kunci Jawaban: Teks Panjang (Essay / Isian / Menjodohkan) ---- */
+.key-container-long {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.key-item-long {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+    background: var(--secondary);
+    border-radius: var(--radius-md);
+    padding: 0.85rem 1rem;
+    border-left: 4px solid var(--primary);
+}
+
+.key-item-num {
+    font-weight: 700;
+    font-size: 0.88rem;
+    color: var(--primary);
+    min-width: 50px;
+    white-space: nowrap;
+}
+
+.key-item-ans {
+    font-size: 0.9rem;
+    color: var(--text-main);
+    line-height: 1.5;
+    white-space: pre-wrap;
+}
+
+/* ---- Soal Essay ---- */
+.q-answer-section {
+    margin-bottom: 1.25rem;
+}
+
+.q-answer-label {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-bottom: 0.5rem;
+}
+
+.q-answer-box {
+    background: #f0fdf4;
+    border: 1.5px solid #86efac;
+    border-radius: var(--radius-sm);
+    padding: 0.85rem 1rem;
+    font-size: 0.92rem;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    color: #166534;
+    font-weight: 500;
+}
+
+.q-answer-box.essay-box {
+    background: #eff6ff;
+    border-color: #93c5fd;
+    color: #1e40af;
+}
+
+.q-essay-lines {
+    margin-top: 0.75rem;
+}
+
+.essay-line-label {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    margin-bottom: 0.4rem;
+    font-weight: 500;
+}
+
+/* Garis ruang jawaban siswa (hanya terlihat saat print) */
+.essay-lines {
+    display: none; /* tampil hanya saat print */
+}
+
+/* ---- Soal Menjodohkan ---- */
+.q-match-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+}
+
+.q-match-col {
+    background: #f8fafc;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+}
+
+.q-match-header {
+    background: var(--primary);
+    color: white;
+    font-size: 0.78rem;
+    font-weight: 700;
+    padding: 0.5rem 0.85rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.q-match-item {
+    padding: 0.6rem 0.85rem;
+    font-size: 0.9rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 0.5rem;
+    line-height: 1.4;
+}
+
+.q-match-item:last-child { border-bottom: none; }
+
+/* ================================================================
+   PRINT — Adaptasi untuk bentuk soal
+   ================================================================ */
+@media print {
+    /* Tampilkan garis jawaban saat print untuk Essay */
+    .essay-lines {
+        display: block;
+        border-top: 1px solid #ccc;
+        margin-top: 0.5rem;
+        padding-top: 0.5rem;
+    }
+    .essay-lines::after {
+        content: "";
+        display: block;
+        height: 4rem;
+        background-image: repeating-linear-gradient(
+            to bottom, transparent, transparent 1.4rem, #ccc 1.4rem, #ccc 1.45rem
+        );
+    }
+
+    /* Sembunyikan panduan jawaban saat print (untuk lembar siswa) */
+    .q-answer-section { display: none; }
+    .q-match-col:last-child { visibility: hidden; }
+}
+
 /* ================================================================
    MODAL
    ================================================================ */
