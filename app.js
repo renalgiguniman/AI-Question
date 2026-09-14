@@ -156,7 +156,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Validasi jumlah soal
         const totalQ = Number(document.getElementById('jumlah-soal').value);
-        if (totalQ < 1 || totalQ > 35) { alert('Jumlah soal harus antara 1 dan 35.'); return; }
+        if (totalQ < 1 || totalQ > 20) { alert('Jumlah soal harus antara 1 dan 20.'); return; }
 
         currentConfig = {
             jenjang: jenjangSelect.value,
@@ -165,6 +165,7 @@ document.addEventListener('DOMContentLoaded', () => {
             materials: [...materials],
             totalQuestions: totalQ,
             difficulty: document.getElementById('difficulty').value,
+            bentukSoal: document.getElementById('bentuk-soal').value,
             bloomDistribution: bloomDist,
         };
 
